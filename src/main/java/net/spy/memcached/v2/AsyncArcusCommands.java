@@ -128,14 +128,17 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     this.arcusClientSupplier = arcusClientSupplier;
   }
 
+  @Override
   public ArcusFuture<Boolean> set(String key, int exp, T value) {
     return store(StoreType.set, key, exp, value);
   }
 
+  @Override
   public ArcusFuture<Boolean> add(String key, int exp, T value) {
     return store(StoreType.add, key, exp, value);
   }
 
+  @Override
   public ArcusFuture<Boolean> replace(String key, int exp, T value) {
     return store(StoreType.replace, key, exp, value);
   }
@@ -180,10 +183,49 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return future;
   }
 
+  @Override
+  public ArcusFuture<Map<String, Boolean>> multiSet(Map<String, T> items, int exp) {
+    return multiStore(StoreType.set, items, exp);
+  }
+
+  @Override
+  public ArcusFuture<Map<String, Boolean>> multiAdd(Map<String, T> items, int exp) {
+    return multiStore(StoreType.add, items, exp);
+  }
+
+  @Override
+  public ArcusFuture<Map<String, Boolean>> multiReplace(Map<String, T> items, int exp) {
+    return multiStore(StoreType.replace, items, exp);
+  }
+
+  private ArcusFuture<Map<String, Boolean>> multiStore(StoreType type,
+                                                       Map<String, T> items,
+                                                       int exp) {
+    Map<String, CompletableFuture<?>> keyToFuture = new HashMap<>(items.size());
+    items.forEach((key, value) -> {
+      CompletableFuture<Boolean> future = store(type, key, exp, value).toCompletableFuture();
+      keyToFuture.put(key, future);
+    });
+
+    return new ArcusMultiFuture<>(keyToFuture.values(), () -> {
+      Map<String, Boolean> results = new HashMap<>();
+      keyToFuture.forEach((key, future) -> {
+        if (future.isCompletedExceptionally()) {
+          results.put(key, null);
+        } else {
+          results.put(key, (Boolean) future.join());
+        }
+      });
+      return results;
+    });
+  }
+
+  @Override
   public ArcusFuture<Boolean> append(String key, T val) {
     return concat(ConcatenationType.append, key, val);
   }
 
+  @Override
   public ArcusFuture<Boolean> prepend(String key, T val) {
     return concat(ConcatenationType.prepend, key, val);
   }
@@ -227,6 +269,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return future;
   }
 
+  @Override
   public ArcusFuture<Boolean> cas(String key, int exp, T value, long casId) {
     AbstractArcusResult<Boolean> result = new AbstractArcusResult<>(new AtomicReference<>());
     ArcusFutureImpl<Boolean> future = new ArcusFutureImpl<>(result);
@@ -268,49 +311,75 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return future;
   }
 
-  public ArcusFuture<Map<String, Boolean>> multiSet(Map<String, T> items, int exp) {
-    return multiStore(StoreType.set, items, exp);
+  @Override
+  public ArcusFuture<Long> incr(String key, int delta) {
+    return mutate(Mutator.incr, key, delta, -1L, 0);
   }
 
-  public ArcusFuture<Map<String, Boolean>> multiAdd(Map<String, T> items, int exp) {
-    return multiStore(StoreType.add, items, exp);
+  @Override
+  public ArcusFuture<Long> incr(String key, int delta, long initial, int exp) {
+    if (initial < 0) {
+      throw new IllegalArgumentException("Initial value must be 0 or greater.");
+    }
+    return mutate(Mutator.incr, key, delta, initial, exp);
   }
 
-  public ArcusFuture<Map<String, Boolean>> multiReplace(Map<String, T> items, int exp) {
-    return multiStore(StoreType.replace, items, exp);
+  @Override
+  public ArcusFuture<Long> decr(String key, int delta) {
+    return mutate(Mutator.decr, key, delta, -1L, 0);
   }
 
-  /**
-   * @param type     store type
-   * @param items map of key to value to store
-   * @param exp      expiration time
-   * @return ArcusFuture with Map of key to Boolean result. If an operation fails exceptionally,
-   * the corresponding value in the map will be null.
-   */
-  private ArcusFuture<Map<String, Boolean>> multiStore(StoreType type,
-                                                       Map<String, T> items,
-                                                       int exp) {
-    Map<String, CompletableFuture<?>> keyToFuture = new HashMap<>(items.size());
+  @Override
+  public ArcusFuture<Long> decr(String key, int delta, long initial, int exp) {
+    if (initial < 0) {
+      throw new IllegalArgumentException("Initial value must be 0 or greater.");
+    }
+    return mutate(Mutator.decr, key, delta, initial, exp);
+  }
 
-    items.forEach((key, value) -> {
-      CompletableFuture<Boolean> future = store(type, key, exp, value).toCompletableFuture();
-      keyToFuture.put(key, future);
-    });
+  private ArcusFuture<Long> mutate(Mutator mutator, String key, int delta, long initial, int exp) {
+    if (delta <= 0) {
+      throw new IllegalArgumentException("Delta must be greater than 0.");
+    }
 
-    /* Combine multiple CompletableFutures into a single ArcusFuture. */
-    return new ArcusMultiFuture<>(keyToFuture.values(), () -> {
-      Map<String, Boolean> results = new HashMap<>();
-      keyToFuture.forEach((key, future) -> {
-        if (future.isCompletedExceptionally()) {
-          results.put(key, null);
-        } else {
-          results.put(key, (Boolean) future.join());
+    AbstractArcusResult<Long> result = new AbstractArcusResult<>(new AtomicReference<>());
+    ArcusFutureImpl<Long> future = new ArcusFutureImpl<>(result);
+    ArcusClient client = arcusClientSupplier.get();
+
+    OperationCallback cb = new OperationCallback() {
+      @Override
+      public void receivedStatus(OperationStatus status) {
+        switch (status.getStatusCode()) {
+          case SUCCESS:
+            result.set(Long.parseLong(status.getMessage()));
+            break;
+          case ERR_NOT_FOUND:
+            result.set(-1L);
+            break;
+          case CANCELLED:
+            future.internalCancel();
+            break;
+          default:
+            /*
+             * TYPE_MISMATCH or unknown statement.
+             */
+            result.addError(key, status);
         }
-      });
-      return results;
-    });
+      }
+
+      @Override
+      public void complete() {
+        future.complete();
+      }
+    };
+    Operation op = client.getOpFact().mutate(mutator, key, delta, initial, exp, cb);
+    future.setOp(op);
+    client.addOp(key, op);
+
+    return future;
   }
 
+  @Override
   public ArcusFuture<T> get(String key) {
     AbstractArcusResult<CachedData> result = new AbstractArcusResult<>(new AtomicReference<>());
     ArcusFutureImpl<T> future = new ArcusFutureImpl<>(result,
@@ -352,6 +421,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return future;
   }
 
+  @Override
   public ArcusFuture<CASValue<T>> gets(String key) {
     AbstractArcusResult<GetsResultImpl<T>> result
             = new AbstractArcusResult<>(new AtomicReference<>());
@@ -395,6 +465,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return future;
   }
 
+  @Override
   public ArcusFuture<Map<String, T>> multiGet(List<String> keys) {
     ArcusClient client = arcusClientSupplier.get();
     Collection<Map.Entry<MemcachedNode, List<String>>> arrangedKeys
@@ -492,71 +563,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return future;
   }
 
-
-  public ArcusFuture<Long> incr(String key, int delta) {
-    return mutate(Mutator.incr, key, delta, -1L, 0);
-  }
-
-  public ArcusFuture<Long> incr(String key, int delta, long initial, int exp) {
-    if (initial < 0) {
-      throw new IllegalArgumentException("Initial value must be 0 or greater.");
-    }
-    return mutate(Mutator.incr, key, delta, initial, exp);
-  }
-
-  public ArcusFuture<Long> decr(String key, int delta) {
-    return mutate(Mutator.decr, key, delta, -1L, 0);
-  }
-
-  public ArcusFuture<Long> decr(String key, int delta, long initial, int exp) {
-    if (initial < 0) {
-      throw new IllegalArgumentException("Initial value must be 0 or greater.");
-    }
-    return mutate(Mutator.decr, key, delta, initial, exp);
-  }
-
-  private ArcusFuture<Long> mutate(Mutator mutator, String key, int delta, long initial, int exp) {
-    if (delta <= 0) {
-      throw new IllegalArgumentException("Delta must be greater than 0.");
-    }
-
-    AbstractArcusResult<Long> result = new AbstractArcusResult<>(new AtomicReference<>());
-    ArcusFutureImpl<Long> future = new ArcusFutureImpl<>(result);
-    ArcusClient client = arcusClientSupplier.get();
-
-    OperationCallback cb = new OperationCallback() {
-      @Override
-      public void receivedStatus(OperationStatus status) {
-        switch (status.getStatusCode()) {
-          case SUCCESS:
-            result.set(Long.parseLong(status.getMessage()));
-            break;
-          case ERR_NOT_FOUND:
-            result.set(-1L);
-            break;
-          case CANCELLED:
-            future.internalCancel();
-            break;
-          default:
-            /*
-             * TYPE_MISMATCH or unknown statement.
-             */
-            result.addError(key, status);
-        }
-      }
-
-      @Override
-      public void complete() {
-        future.complete();
-      }
-    };
-    Operation op = client.getOpFact().mutate(mutator, key, delta, initial, exp, cb);
-    future.setOp(op);
-    client.addOp(key, op);
-
-    return future;
-  }
-
+  @Override
   public ArcusFuture<Map<String, CASValue<T>>> multiGets(List<String> keys) {
     ArcusClient client = arcusClientSupplier.get();
     Collection<Map.Entry<MemcachedNode, List<String>>> arrangedKeys
@@ -647,7 +654,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return future;
   }
 
-
+  @Override
   public ArcusFuture<Boolean> delete(String key) {
     AbstractArcusResult<Boolean> result = new AbstractArcusResult<>(new AtomicReference<>());
     ArcusFutureImpl<Boolean> future = new ArcusFutureImpl<>(result);
@@ -686,6 +693,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return future;
   }
 
+  @Override
   public ArcusFuture<Map<String, Boolean>> multiDelete(List<String> keys) {
     Map<String, CompletableFuture<?>> keyToFuture = new HashMap<>(keys.size());
 
@@ -708,6 +716,412 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     });
   }
 
+  @Override
+  public ArcusFuture<Boolean> lopCreate(String key, ElementValueType type,
+                                        CollectionAttributes attributes) {
+    if (attributes == null) {
+      throw new IllegalArgumentException("CollectionAttributes cannot be null");
+    }
+
+    ListCreate create = new ListCreate(TranscoderUtils.examineFlags(type),
+            attributes.getExpireTime(), attributes.getMaxCount(),
+            attributes.getOverflowAction(), attributes.getReadable(), false);
+    return collectionCreate(key, create);
+  }
+
+  @Override
+  public ArcusFuture<Boolean> lopInsert(String key, int index, T value) {
+    return lopInsert(key, index, value, null);
+  }
+
+  @Override
+  public ArcusFuture<Boolean> lopInsert(String key, int index, T value,
+                                        CollectionAttributes attributes) {
+    ListInsert<T> insert = new ListInsert<>(value, null, attributes);
+    return collectionInsert(key, String.valueOf(index), insert);
+  }
+
+  @Override
+  public ArcusFuture<T> lopGet(String key, int index, GetArgs args) {
+    AbstractArcusResult<T> result = new AbstractArcusResult<>(new AtomicReference<>());
+    ArcusFutureImpl<T> future = new ArcusFutureImpl<>(result);
+    ListGet get = new ListGet(index, args.isWithDelete(), args.isDropIfEmpty());
+    ArcusClient client = arcusClientSupplier.get();
+
+    CollectionGetOperation.Callback cb = new CollectionGetOperation.Callback() {
+      @Override
+      public void receivedStatus(OperationStatus status) {
+        switch (status.getStatusCode()) {
+          case SUCCESS:
+            break;
+          case ERR_NOT_FOUND:
+          case ERR_NOT_FOUND_ELEMENT:
+            result.set(null);
+            break;
+          case CANCELLED:
+            future.internalCancel();
+            break;
+          default:
+            /*
+             * TYPE_MISMATCH / UNREADABLE / NOT_SUPPORTED or unknown statement.
+             */
+            result.addError(key, status);
+        }
+      }
+
+      @Override
+      public void complete() {
+        future.complete();
+      }
+
+      @Override
+      public void gotData(String subKey, int flags, byte[] data, byte[] eFlag) {
+        CachedData cachedData = new CachedData(flags, data, tcForCollection.getMaxSize());
+        result.set(tcForCollection.decode(cachedData));
+      }
+    };
+    Operation op = client.getOpFact().collectionGet(key, get, cb);
+    future.setOp(op);
+    client.addOp(key, op);
+
+    return future;
+  }
+
+  @Override
+  public ArcusFuture<List<T>> lopGet(String key, int from, int to, GetArgs args) {
+    AbstractArcusResult<List<T>> result =
+        new AbstractArcusResult<>(new AtomicReference<>(new ArrayList<>()));
+    ArcusFutureImpl<List<T>> future = new ArcusFutureImpl<>(result);
+    ListGet get = new ListGet(from, to, args.isWithDelete(), args.isDropIfEmpty());
+    ArcusClient client = arcusClientSupplier.get();
+
+    CollectionGetOperation.Callback cb = new CollectionGetOperation.Callback() {
+      @Override
+      public void receivedStatus(OperationStatus status) {
+        switch (status.getStatusCode()) {
+          case SUCCESS:
+          case ERR_NOT_FOUND_ELEMENT:
+            break;
+          case ERR_NOT_FOUND:
+            result.set(null);
+            break;
+          case CANCELLED:
+            future.internalCancel();
+            break;
+          default:
+            /*
+             * TYPE_MISMATCH / UNREADABLE / NOT_SUPPORTED or unknown statement.
+             */
+            result.addError(key, status);
+        }
+      }
+
+      @Override
+      public void complete() {
+        future.complete();
+      }
+
+      @Override
+      public void gotData(String subKey, int flags, byte[] data, byte[] eFlag) {
+        CachedData cachedData = new CachedData(flags, data, tcForCollection.getMaxSize());
+        result.get().add(tcForCollection.decode(cachedData));
+      }
+    };
+    Operation op = client.getOpFact().collectionGet(key, get, cb);
+    future.setOp(op);
+    client.addOp(key, op);
+
+    return future;
+  }
+
+  @Override
+  public ArcusFuture<Boolean> lopDelete(String key, int index, boolean dropIfEmpty) {
+    ListDelete delete = new ListDelete(index, dropIfEmpty, false);
+    return collectionDelete(key, delete);
+  }
+
+  @Override
+  public ArcusFuture<Boolean> lopDelete(String key, int from, int to, boolean dropIfEmpty) {
+    ListDelete delete = new ListDelete(from, to, dropIfEmpty, false);
+    return collectionDelete(key, delete);
+  }
+
+  @Override
+  public ArcusFuture<Boolean> sopCreate(String key, ElementValueType type,
+                                        CollectionAttributes attributes) {
+    if (attributes == null) {
+      throw new IllegalArgumentException("CollectionAttributes cannot be null");
+    }
+
+    SetCreate create = new SetCreate(
+            TranscoderUtils.examineFlags(type), attributes.getExpireTime(),
+            attributes.getMaxCount(), attributes.getReadable(), false);
+    return collectionCreate(key, create);
+  }
+
+  @Override
+  public ArcusFuture<Boolean> sopInsert(String key, T value) {
+    return sopInsert(key, value, null);
+  }
+
+  @Override
+  public ArcusFuture<Boolean> sopInsert(String key, T value, CollectionAttributes attributes) {
+    SetInsert<T> insert = new SetInsert<>(value, null, attributes);
+    return collectionInsert(key, "", insert);
+  }
+
+  @Override
+  public ArcusFuture<Set<T>> sopGet(String key, int count, GetArgs args) {
+    AbstractArcusResult<Set<T>> result
+            = new AbstractArcusResult<>(new AtomicReference<>(new HashSet<>()));
+    ArcusFutureImpl<Set<T>> future = new ArcusFutureImpl<>(result);
+    SetGet get = new SetGet(count, args.isWithDelete(), args.isDropIfEmpty());
+    ArcusClient client = arcusClientSupplier.get();
+
+    CollectionGetOperation.Callback cb = new CollectionGetOperation.Callback() {
+      @Override
+      public void gotData(String subKey, int flags, byte[] data, byte[] eFlag) {
+        CachedData cachedData = new CachedData(flags, data, tcForCollection.getMaxSize());
+        result.get().add(tcForCollection.decode(cachedData));
+      }
+
+      @Override
+      public void receivedStatus(OperationStatus status) {
+        switch (status.getStatusCode()) {
+          case SUCCESS:
+          case ERR_NOT_FOUND_ELEMENT:
+            break;
+          case ERR_NOT_FOUND:
+            result.set(null);
+            break;
+          case CANCELLED:
+            future.internalCancel();
+            break;
+          default:
+            /*
+             * TYPE_MISMATCH / UNREADABLE / NOT_SUPPORTED or unknown statement.
+             */
+            result.addError(key, status);
+        }
+      }
+
+      @Override
+      public void complete() {
+        future.complete();
+      }
+    };
+    Operation op = client.getOpFact().collectionGet(key, get, cb);
+    future.setOp(op);
+    client.addOp(key, op);
+
+    return future;
+  }
+
+  @Override
+  public ArcusFuture<Boolean> sopExist(String key, T value) {
+    AbstractArcusResult<Boolean> result = new AbstractArcusResult<>(new AtomicReference<>());
+    ArcusFutureImpl<Boolean> future = new ArcusFutureImpl<>(result);
+    SetExist<T> exist = new SetExist<>(value, tcForCollection);
+    ArcusClient client = arcusClientSupplier.get();
+
+    OperationCallback cb = new OperationCallback() {
+      @Override
+      public void receivedStatus(OperationStatus status) {
+        switch (status.getStatusCode()) {
+          case EXIST:
+            result.set(true);
+            break;
+          case NOT_EXIST:
+            result.set(false);
+            break;
+          case ERR_NOT_FOUND:
+            result.set(null);
+            break;
+          case CANCELLED:
+            future.internalCancel();
+            break;
+          default:
+            /*
+             * TYPE_MISMATCH / UNREADABLE / NOT_SUPPORTED or unknown statement.
+             */
+            result.addError(key, status);
+            break;
+        }
+      }
+
+      @Override
+      public void complete() {
+        future.complete();
+      }
+    };
+    Operation op = client.getOpFact().collectionExist(key, "", exist, cb);
+    future.setOp(op);
+    client.addOp(key, op);
+
+    return future;
+  }
+
+  @Override
+  public ArcusFuture<Boolean> sopDelete(String key, T value, boolean dropIfEmpty) {
+    SetDelete<T> delete = new SetDelete<>(value, dropIfEmpty, false, tcForCollection);
+    return collectionDelete(key, delete);
+  }
+
+  @Override
+  public ArcusFuture<Boolean> mopCreate(String key, ElementValueType type,
+                                        CollectionAttributes attributes) {
+    MapCreate create = new MapCreate(TranscoderUtils.examineFlags(type),
+            attributes.getExpireTime(), attributes.getMaxCount(),
+            attributes.getReadable(), false);
+    return collectionCreate(key, create);
+  }
+
+  @Override
+  public ArcusFuture<Boolean> mopInsert(String key, String mKey, T value) {
+    return mopInsert(key, mKey, value, null);
+  }
+
+  @Override
+  public ArcusFuture<Boolean> mopInsert(String key, String mKey, T value,
+                                        CollectionAttributes attributes) {
+    MapInsert<T> insert = new MapInsert<>(value, null, attributes);
+    return collectionInsert(key, mKey, insert);
+  }
+
+  @Override
+  public ArcusFuture<Boolean> mopUpsert(String key, String mKey, T value) {
+    return mopUpsert(key, mKey, value, null);
+  }
+
+  @Override
+  public ArcusFuture<Boolean> mopUpsert(String key, String mKey, T value,
+                                        CollectionAttributes attributes) {
+    MapUpsert<T> upsert = new MapUpsert<>(value, attributes);
+    return collectionInsert(key, mKey, upsert);
+  }
+
+  @Override
+  public ArcusFuture<Boolean> mopUpdate(String key, String mKey, T value) {
+    MapUpdate<T> update = new MapUpdate<>(value, false);
+    return collectionUpdate(key, mKey, update);
+  }
+
+  @Override
+  public ArcusFuture<Map<String, T>> mopGet(String key, GetArgs args) {
+    return mopGet(key, new ArrayList<>(), args);
+  }
+
+  @Override
+  public ArcusFuture<T> mopGet(String key, String mKey, GetArgs args) {
+    AbstractArcusResult<T> result = new AbstractArcusResult<>(new AtomicReference<>());
+    ArcusFutureImpl<T> future = new ArcusFutureImpl<>(result);
+    List<String> mKeys = Collections.singletonList(mKey);
+    MapGet get = new MapGet(mKeys, args.isWithDelete(), args.isDropIfEmpty());
+    ArcusClient client = arcusClientSupplier.get();
+
+    CollectionGetOperation.Callback cb = new CollectionGetOperation.Callback() {
+      @Override
+      public void gotData(String mKey, int flags, byte[] data, byte[] eFlag) {
+        CachedData cachedData = new CachedData(flags, data, tcForCollection.getMaxSize());
+        result.set(tcForCollection.decode(cachedData));
+      }
+
+      @Override
+      public void receivedStatus(OperationStatus status) {
+        switch (status.getStatusCode()) {
+          case SUCCESS:
+            break;
+          case ERR_NOT_FOUND_ELEMENT:
+          case ERR_NOT_FOUND:
+            result.set(null);
+            break;
+          case CANCELLED:
+            future.internalCancel();
+            break;
+          default:
+            /*
+             * TYPE_MISMATCH / UNREADABLE / NOT_SUPPORTED or unknown statement.
+             */
+            result.addError(key, status);
+        }
+      }
+
+      @Override
+      public void complete() {
+        future.complete();
+      }
+    };
+    Operation op = client.getOpFact().collectionGet(key, get, cb);
+    future.setOp(op);
+    client.addOp(key, op);
+
+    return future;
+  }
+
+  @Override
+  public ArcusFuture<Map<String, T>> mopGet(String key, List<String> mKeys, GetArgs args) {
+    AbstractArcusResult<Map<String, T>> result =
+            new AbstractArcusResult<>(new AtomicReference<>(new HashMap<>()));
+    ArcusFutureImpl<Map<String, T>> future = new ArcusFutureImpl<>(result);
+    MapGet get = new MapGet(mKeys, args.isWithDelete(), args.isDropIfEmpty());
+    ArcusClient client = arcusClientSupplier.get();
+
+    CollectionGetOperation.Callback cb = new CollectionGetOperation.Callback() {
+      @Override
+      public void gotData(String mKey, int flags, byte[] data, byte[] eFlag) {
+        CachedData cachedData = new CachedData(flags, data, tcForCollection.getMaxSize());
+        result.get().put(mKey, tcForCollection.decode(cachedData));
+      }
+
+      @Override
+      public void receivedStatus(OperationStatus status) {
+        switch (status.getStatusCode()) {
+          case SUCCESS:
+          case ERR_NOT_FOUND_ELEMENT:
+            break;
+          case ERR_NOT_FOUND:
+            result.set(null);
+            break;
+          case CANCELLED:
+            future.internalCancel();
+            break;
+          default:
+            /*
+             * TYPE_MISMATCH / UNREADABLE / NOT_SUPPORTED or unknown statement.
+             */
+            result.addError(key, status);
+        }
+      }
+
+      @Override
+      public void complete() {
+        future.complete();
+      }
+    };
+    Operation op = client.getOpFact().collectionGet(key, get, cb);
+    future.setOp(op);
+    client.addOp(key, op);
+
+    return future;
+  }
+
+  @Override
+  public ArcusFuture<Boolean> mopDelete(String key, boolean dropIfEmpty) {
+    return mopDelete(key, new ArrayList<>(), dropIfEmpty);
+  }
+
+  @Override
+  public ArcusFuture<Boolean> mopDelete(String key, String mKey, boolean dropIfEmpty) {
+    return mopDelete(key, Collections.singletonList(mKey), dropIfEmpty);
+  }
+
+  @Override
+  public ArcusFuture<Boolean> mopDelete(String key, List<String> mKeys, boolean dropIfEmpty) {
+    MapDelete delete = new MapDelete(mKeys, dropIfEmpty, false);
+    return collectionDelete(key, delete);
+  }
+
+  @Override
   public ArcusFuture<Boolean> bopCreate(String key, ElementValueType type,
                                         CollectionAttributes attributes) {
     if (attributes == null) {
@@ -721,45 +1135,12 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return collectionCreate(key, create);
   }
 
-  private ArcusFuture<Boolean> collectionCreate(String key, CollectionCreate collectionCreate) {
-    AbstractArcusResult<Boolean> result = new AbstractArcusResult<>(new AtomicReference<>());
-    ArcusFutureImpl<Boolean> future = new ArcusFutureImpl<>(result);
-    ArcusClient client = arcusClientSupplier.get();
-
-    OperationCallback cb = new OperationCallback() {
-      @Override
-      public void receivedStatus(OperationStatus status) {
-        switch (status.getStatusCode()) {
-          case SUCCESS:
-            result.set(true);
-            break;
-          case ERR_EXISTS:
-            result.set(false);
-            break;
-          case CANCELLED:
-            future.internalCancel();
-            break;
-          default:
-            /*
-             * NOT_SUPPORTED or unknown statement.
-             */
-            result.addError(key, status);
-        }
-      }
-
-      @Override
-      public void complete() {
-        future.complete();
-      }
-    };
-    CollectionCreateOperation op = client.getOpFact()
-        .collectionCreate(key, collectionCreate, cb);
-    future.setOp(op);
-    client.addOp(key, op);
-
-    return future;
+  @Override
+  public ArcusFuture<Boolean> bopInsert(String key, BTreeElement<T> element) {
+    return bopInsert(key, element, null);
   }
 
+  @Override
   public ArcusFuture<Boolean> bopInsert(String key, BTreeElement<T> element,
                                         CollectionAttributes attributes) {
     BTreeInsert<T> insert = new BTreeInsert<>(element.getValue(), element.getEFlag(),
@@ -767,8 +1148,9 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return collectionInsert(key, element.getBKey().toString(), insert);
   }
 
-  public ArcusFuture<Boolean> bopInsert(String key, BTreeElement<T> element) {
-    return bopInsert(key, element, null);
+  @Override
+  public ArcusFuture<Boolean> bopUpsert(String key, BTreeElement<T> element) {
+    return bopUpsert(key, element, null);
   }
 
   @Override
@@ -780,128 +1162,30 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
   }
 
   @Override
-  public ArcusFuture<Boolean> bopUpsert(String key, BTreeElement<T> element) {
-    return bopUpsert(key, element, null);
-  }
-
-  private ArcusFuture<Boolean> collectionInsert(String key,
-                                                String internalKey,
-                                                CollectionInsert<T> collectionInsert) {
-    AbstractArcusResult<Boolean> result = new AbstractArcusResult<>(new AtomicReference<>());
-    ArcusFutureImpl<Boolean> future = new ArcusFutureImpl<>(result);
-    CachedData co = tcForCollection.encode(collectionInsert.getValue());
-    collectionInsert.setFlags(co.getFlags());
-    ArcusClient client = arcusClientSupplier.get();
-
-    OperationCallback cb = new OperationCallback() {
-      @Override
-      public void receivedStatus(OperationStatus status) {
-        switch (status.getStatusCode()) {
-          case SUCCESS:
-            result.set(true);
-            break;
-          case ERR_ELEMENT_EXISTS:
-            result.set(false);
-            break;
-          case ERR_NOT_FOUND:
-            result.set(null);
-            break;
-          case CANCELLED:
-            future.internalCancel();
-            break;
-          default:
-            /*
-             * TYPE_MISMATCH / BKEY_MISMATCH / OVERFLOWED / OUT_OF_RANGE / NOT_SUPPORTED
-             * or unknown statement.
-             */
-            result.addError(key, status);
-        }
-      }
-
-      @Override
-      public void complete() {
-        future.complete();
-      }
-    };
-    CollectionInsertOperation op = client.getOpFact()
-        .collectionInsert(key, internalKey, collectionInsert, co.getData(), cb);
-    future.setOp(op);
-    client.addOp(key, op);
-
-    return future;
-  }
-
   public ArcusFuture<Boolean> bopUpdate(String key, BTreeUpdateElement<T> element) {
     BTreeUpdate<T> update = new BTreeUpdate<>(element.getValue(), element.getEFlagUpdate(), false);
     return collectionUpdate(key, element.getBKey().toString(), update);
   }
 
-  private ArcusFuture<Boolean> collectionUpdate(String key,
-                                                String internalKey,
-                                                CollectionUpdate<T> collectionUpdate) {
-    AbstractArcusResult<Boolean> result = new AbstractArcusResult<>(new AtomicReference<>());
-    ArcusFutureImpl<Boolean> future = new ArcusFutureImpl<>(result);
-    CachedData co = null;
-    if (collectionUpdate.getNewValue() != null) {
-      co = tcForCollection.encode(collectionUpdate.getNewValue());
-      collectionUpdate.setFlags(co.getFlags());
-    }
-    ArcusClient client = arcusClientSupplier.get();
-
-    OperationCallback cb = new OperationCallback() {
-      @Override
-      public void receivedStatus(OperationStatus status) {
-        switch (status.getStatusCode()) {
-          case SUCCESS:
-            result.set(true);
-            break;
-          case ERR_NOT_FOUND_ELEMENT:
-            result.set(false);
-            break;
-          case ERR_NOT_FOUND:
-            result.set(null);
-            break;
-          case CANCELLED:
-            future.internalCancel();
-            break;
-          default:
-            /*
-             * TYPE_MISMATCH / BKEY_MISMATCH / EFLAG_MISMATCH / NOTHING_TO_UPDATE /
-             * OVERFLOWED / OUT_OF_RANGE / NOT_SUPPORTED or unknown statement.
-             */
-            result.addError(key, status);
-        }
-      }
-
-      @Override
-      public void complete() {
-        future.complete();
-      }
-    };
-    Operation op = client.getOpFact()
-            .collectionUpdate(key, internalKey, collectionUpdate,
-                    (co == null) ? null : co.getData(), cb);
-    future.setOp(op);
-    client.addOp(key, op);
-
-    return future;
-  }
-
+  @Override
   public ArcusFuture<Map.Entry<Boolean, BTreeElement<T>>> bopInsertAndGetTrimmed(
       String key, BTreeElement<T> element, CollectionAttributes attributes) {
     return bopInsertOrUpsertAndGetTrimmed(key, element, false, attributes);
   }
 
+  @Override
   public ArcusFuture<Map.Entry<Boolean, BTreeElement<T>>> bopInsertAndGetTrimmed(
       String key, BTreeElement<T> element) {
     return bopInsertOrUpsertAndGetTrimmed(key, element, false, null);
   }
 
+  @Override
   public ArcusFuture<Map.Entry<Boolean, BTreeElement<T>>> bopUpsertAndGetTrimmed(
       String key, BTreeElement<T> element, CollectionAttributes attributes) {
     return bopInsertOrUpsertAndGetTrimmed(key, element, true, attributes);
   }
 
+  @Override
   public ArcusFuture<Map.Entry<Boolean, BTreeElement<T>>> bopUpsertAndGetTrimmed(
       String key, BTreeElement<T> element) {
     return bopInsertOrUpsertAndGetTrimmed(key, element, true, null);
@@ -975,6 +1259,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return insertAndGet;
   }
 
+  @Override
   public ArcusFuture<BTreeElement<T>> bopGet(String key, BKey bKey, BopGetArgs args) {
     AbstractArcusResult<BTreeElement<T>> result =
         new AbstractArcusResult<>(new AtomicReference<>());
@@ -1033,6 +1318,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return get;
   }
 
+  @Override
   public ArcusFuture<BTreeElements<T>> bopGet(String key, BKey from, BKey to, BopGetArgs args) {
     verifyBKeyRange(from, to);
 
@@ -1098,6 +1384,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return get;
   }
 
+  @Override
   public ArcusFuture<Map<String, BTreeElements<T>>> bopMultiGet(List<String> keys,
                                                                 BKey from, BKey to,
                                                                 BopGetArgs args) {
@@ -1250,6 +1537,50 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     }
   }
 
+  @Override
+  public ArcusFuture<Long> bopCount(String key, BKey from, BKey to, ElementFlagFilter eFlagFilter) {
+    verifyBKeyRange(from, to);
+
+    AbstractArcusResult<Long> result = new AbstractArcusResult<>(new AtomicReference<>());
+    ArcusFutureImpl<Long> future = new ArcusFutureImpl<>(result);
+    CollectionCount collectionCount = new BTreeCount(from.toString(), to.toString(), eFlagFilter);
+    ArcusClient client = arcusClientSupplier.get();
+
+    OperationCallback cb = new OperationCallback() {
+      @Override
+      public void receivedStatus(OperationStatus status) {
+        switch (status.getStatusCode()) {
+          case SUCCESS:
+            long count = Long.parseLong(status.getMessage());
+            result.set(count);
+            break;
+          case ERR_NOT_FOUND:
+            result.set(null);
+            break;
+          case CANCELLED:
+            future.internalCancel();
+            break;
+          default:
+            /*
+             * TYPE_MISMATCH / BKEY_MISMATCH / UNREADABLE / NOT_SUPPORTED or unknown statement.
+             */
+            result.addError(key, status);
+        }
+      }
+
+      @Override
+      public void complete() {
+        future.complete();
+      }
+    };
+    Operation op = client.getOpFact().collectionCount(key, collectionCount, cb);
+    future.setOp(op);
+    client.addOp(key, op);
+
+    return future;
+  }
+
+  @Override
   public ArcusFuture<Integer> bopGetPosition(String key, BKey bKey, BTreeOrder order) {
     AbstractArcusResult<Integer> result = new AbstractArcusResult<>(new AtomicReference<>());
     ArcusFutureImpl<Integer> future = new ArcusFutureImpl<>(result);
@@ -1294,6 +1625,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return future;
   }
 
+  @Override
   public ArcusFuture<BTreeElement<T>> bopGetByPosition(String key, int pos, BTreeOrder order) {
     AbstractArcusResult<BTreeElement<T>> result
             = new AbstractArcusResult<>(new AtomicReference<>());
@@ -1340,6 +1672,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return future;
   }
 
+  @Override
   public ArcusFuture<List<BTreeElement<T>>> bopGetByPosition(String key,
                                                              int from, int to,
                                                              BTreeOrder order) {
@@ -1393,6 +1726,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return future;
   }
 
+  @Override
   public ArcusFuture<List<BTreePositionElement<T>>> bopPositionWithGet(String key,
                                                                       BKey bKey,
                                                                       int count,
@@ -1446,6 +1780,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return future;
   }
 
+  @Override
   public ArcusFuture<SMGetElements<T>> bopSortMergeGet(List<String> keys, BKey from, BKey to,
                                                        boolean unique, BopGetArgs args) {
     verifyBKeyRange(from, to);
@@ -1571,24 +1906,180 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     }
   }
 
+  @Override
   public ArcusFuture<Long> bopIncr(String key, BKey bKey, int delta) {
     CollectionMutate mutate = new BTreeMutate(Mutator.incr, delta);
     return collectionMutate(key, bKey.toString(), mutate);
   }
 
+  @Override
   public ArcusFuture<Long> bopIncr(String key, BKey bKey, int delta, long initial, byte[] eFlag) {
     CollectionMutate mutate = new BTreeMutate(Mutator.incr, delta, initial, eFlag);
     return collectionMutate(key, bKey.toString(), mutate);
   }
 
+  @Override
   public ArcusFuture<Long> bopDecr(String key, BKey bKey, int delta) {
     CollectionMutate mutate = new BTreeMutate(Mutator.decr, delta);
     return collectionMutate(key, bKey.toString(), mutate);
   }
 
+  @Override
   public ArcusFuture<Long> bopDecr(String key, BKey bKey, int delta, long initial, byte[] eFlag) {
     CollectionMutate mutate = new BTreeMutate(Mutator.decr, delta, initial, eFlag);
     return collectionMutate(key, bKey.toString(), mutate);
+  }
+
+  @Override
+  public ArcusFuture<Boolean> bopDelete(String key, BKey bKey, BopDeleteArgs args) {
+    BTreeDelete delete = new BTreeDelete(bKey.toString(),
+            args.getEFlagFilter(), args.isDropIfEmpty(), false);
+    return collectionDelete(key, delete);
+  }
+
+  @Override
+  public ArcusFuture<Boolean> bopDelete(String key, BKey from, BKey to, BopDeleteArgs args) {
+    verifyBKeyRange(from, to);
+    BTreeDelete delete = new BTreeDelete(from.toString(), to.toString(),
+            args.getCount(), args.getEFlagFilter(), args.isDropIfEmpty(), false);
+    return collectionDelete(key, delete);
+  }
+
+  private ArcusFuture<Boolean> collectionCreate(String key, CollectionCreate collectionCreate) {
+    AbstractArcusResult<Boolean> result = new AbstractArcusResult<>(new AtomicReference<>());
+    ArcusFutureImpl<Boolean> future = new ArcusFutureImpl<>(result);
+    ArcusClient client = arcusClientSupplier.get();
+
+    OperationCallback cb = new OperationCallback() {
+      @Override
+      public void receivedStatus(OperationStatus status) {
+        switch (status.getStatusCode()) {
+          case SUCCESS:
+            result.set(true);
+            break;
+          case ERR_EXISTS:
+            result.set(false);
+            break;
+          case CANCELLED:
+            future.internalCancel();
+            break;
+          default:
+            /*
+             * NOT_SUPPORTED or unknown statement.
+             */
+            result.addError(key, status);
+        }
+      }
+
+      @Override
+      public void complete() {
+        future.complete();
+      }
+    };
+    CollectionCreateOperation op = client.getOpFact()
+        .collectionCreate(key, collectionCreate, cb);
+    future.setOp(op);
+    client.addOp(key, op);
+
+    return future;
+  }
+
+  private ArcusFuture<Boolean> collectionInsert(String key,
+                                                String internalKey,
+                                                CollectionInsert<T> collectionInsert) {
+    AbstractArcusResult<Boolean> result = new AbstractArcusResult<>(new AtomicReference<>());
+    ArcusFutureImpl<Boolean> future = new ArcusFutureImpl<>(result);
+    CachedData co = tcForCollection.encode(collectionInsert.getValue());
+    collectionInsert.setFlags(co.getFlags());
+    ArcusClient client = arcusClientSupplier.get();
+
+    OperationCallback cb = new OperationCallback() {
+      @Override
+      public void receivedStatus(OperationStatus status) {
+        switch (status.getStatusCode()) {
+          case SUCCESS:
+            result.set(true);
+            break;
+          case ERR_ELEMENT_EXISTS:
+            result.set(false);
+            break;
+          case ERR_NOT_FOUND:
+            result.set(null);
+            break;
+          case CANCELLED:
+            future.internalCancel();
+            break;
+          default:
+            /*
+             * TYPE_MISMATCH / BKEY_MISMATCH / OVERFLOWED / OUT_OF_RANGE / NOT_SUPPORTED
+             * or unknown statement.
+             */
+            result.addError(key, status);
+        }
+      }
+
+      @Override
+      public void complete() {
+        future.complete();
+      }
+    };
+    CollectionInsertOperation op = client.getOpFact()
+        .collectionInsert(key, internalKey, collectionInsert, co.getData(), cb);
+    future.setOp(op);
+    client.addOp(key, op);
+
+    return future;
+  }
+
+  private ArcusFuture<Boolean> collectionUpdate(String key,
+                                                String internalKey,
+                                                CollectionUpdate<T> collectionUpdate) {
+    AbstractArcusResult<Boolean> result = new AbstractArcusResult<>(new AtomicReference<>());
+    ArcusFutureImpl<Boolean> future = new ArcusFutureImpl<>(result);
+    CachedData co = null;
+    if (collectionUpdate.getNewValue() != null) {
+      co = tcForCollection.encode(collectionUpdate.getNewValue());
+      collectionUpdate.setFlags(co.getFlags());
+    }
+    ArcusClient client = arcusClientSupplier.get();
+
+    OperationCallback cb = new OperationCallback() {
+      @Override
+      public void receivedStatus(OperationStatus status) {
+        switch (status.getStatusCode()) {
+          case SUCCESS:
+            result.set(true);
+            break;
+          case ERR_NOT_FOUND_ELEMENT:
+            result.set(false);
+            break;
+          case ERR_NOT_FOUND:
+            result.set(null);
+            break;
+          case CANCELLED:
+            future.internalCancel();
+            break;
+          default:
+            /*
+             * TYPE_MISMATCH / BKEY_MISMATCH / EFLAG_MISMATCH / NOTHING_TO_UPDATE /
+             * OVERFLOWED / OUT_OF_RANGE / NOT_SUPPORTED or unknown statement.
+             */
+            result.addError(key, status);
+        }
+      }
+
+      @Override
+      public void complete() {
+        future.complete();
+      }
+    };
+    Operation op = client.getOpFact()
+            .collectionUpdate(key, internalKey, collectionUpdate,
+                    (co == null) ? null : co.getData(), cb);
+    future.setOp(op);
+    client.addOp(key, op);
+
+    return future;
   }
 
   private ArcusFuture<Long> collectionMutate(String key, String internalKey,
@@ -1632,19 +2123,6 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return future;
   }
 
-  public ArcusFuture<Boolean> bopDelete(String key, BKey bKey, BopDeleteArgs args) {
-    BTreeDelete delete = new BTreeDelete(bKey.toString(),
-            args.getEFlagFilter(), args.isDropIfEmpty(), false);
-    return collectionDelete(key, delete);
-  }
-
-  public ArcusFuture<Boolean> bopDelete(String key, BKey from, BKey to, BopDeleteArgs args) {
-    verifyBKeyRange(from, to);
-    BTreeDelete delete = new BTreeDelete(from.toString(), to.toString(),
-            args.getCount(), args.getEFlagFilter(), args.isDropIfEmpty(), false);
-    return collectionDelete(key, delete);
-  }
-
   private ArcusFuture<Boolean> collectionDelete(String key, CollectionDelete delete) {
     AbstractArcusResult<Boolean> result = new AbstractArcusResult<>(new AtomicReference<>());
     ArcusFutureImpl<Boolean> future = new ArcusFutureImpl<>(result);
@@ -1685,433 +2163,12 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
 
     return future;
   }
-
-  public ArcusFuture<Long> bopCount(String key, BKey from, BKey to, ElementFlagFilter eFlagFilter) {
-    verifyBKeyRange(from, to);
-
-    AbstractArcusResult<Long> result = new AbstractArcusResult<>(new AtomicReference<>());
-    ArcusFutureImpl<Long> future = new ArcusFutureImpl<>(result);
-    CollectionCount collectionCount = new BTreeCount(from.toString(), to.toString(), eFlagFilter);
-    ArcusClient client = arcusClientSupplier.get();
-
-    OperationCallback cb = new OperationCallback() {
-      @Override
-      public void receivedStatus(OperationStatus status) {
-        switch (status.getStatusCode()) {
-          case SUCCESS:
-            long count = Long.parseLong(status.getMessage());
-            result.set(count);
-            break;
-          case ERR_NOT_FOUND:
-            result.set(null);
-            break;
-          case CANCELLED:
-            future.internalCancel();
-            break;
-          default:
-            /*
-             * TYPE_MISMATCH / BKEY_MISMATCH / UNREADABLE / NOT_SUPPORTED or unknown statement.
-             */
-            result.addError(key, status);
-        }
-      }
-
-      @Override
-      public void complete() {
-        future.complete();
-      }
-    };
-    Operation op = client.getOpFact().collectionCount(key, collectionCount, cb);
-    future.setOp(op);
-    client.addOp(key, op);
-
-    return future;
-  }
-
-  public ArcusFuture<Boolean> lopCreate(String key, ElementValueType type,
-                                        CollectionAttributes attributes) {
-    if (attributes == null) {
-      throw new IllegalArgumentException("CollectionAttributes cannot be null");
-    }
-
-    ListCreate create = new ListCreate(TranscoderUtils.examineFlags(type),
-            attributes.getExpireTime(), attributes.getMaxCount(),
-            attributes.getOverflowAction(), attributes.getReadable(), false);
-    return collectionCreate(key, create);
-  }
-
-  public ArcusFuture<Boolean> lopInsert(String key, int index, T value) {
-    return lopInsert(key, index, value, null);
-  }
-
-  public ArcusFuture<Boolean> lopInsert(String key, int index, T value,
-                                        CollectionAttributes attributes) {
-    ListInsert<T> insert = new ListInsert<>(value, null, attributes);
-    return collectionInsert(key, String.valueOf(index), insert);
-  }
-
-  public ArcusFuture<T> lopGet(String key, int index, GetArgs args) {
-    AbstractArcusResult<T> result = new AbstractArcusResult<>(new AtomicReference<>());
-    ArcusFutureImpl<T> future = new ArcusFutureImpl<>(result);
-    ListGet get = new ListGet(index, args.isWithDelete(), args.isDropIfEmpty());
-    ArcusClient client = arcusClientSupplier.get();
-
-    CollectionGetOperation.Callback cb = new CollectionGetOperation.Callback() {
-      @Override
-      public void receivedStatus(OperationStatus status) {
-        switch (status.getStatusCode()) {
-          case SUCCESS:
-            break;
-          case ERR_NOT_FOUND:
-          case ERR_NOT_FOUND_ELEMENT:
-            result.set(null);
-            break;
-          case CANCELLED:
-            future.internalCancel();
-            break;
-          default:
-            /*
-             * TYPE_MISMATCH / UNREADABLE / NOT_SUPPORTED or unknown statement.
-             */
-            result.addError(key, status);
-        }
-      }
-
-      @Override
-      public void complete() {
-        future.complete();
-      }
-
-      @Override
-      public void gotData(String subKey, int flags, byte[] data, byte[] eFlag) {
-        CachedData cachedData = new CachedData(flags, data, tcForCollection.getMaxSize());
-        result.set(tcForCollection.decode(cachedData));
-      }
-    };
-    Operation op = client.getOpFact().collectionGet(key, get, cb);
-    future.setOp(op);
-    client.addOp(key, op);
-
-    return future;
-  }
-
-  public ArcusFuture<List<T>> lopGet(String key, int from, int to, GetArgs args) {
-    AbstractArcusResult<List<T>> result =
-        new AbstractArcusResult<>(new AtomicReference<>(new ArrayList<>()));
-    ArcusFutureImpl<List<T>> future = new ArcusFutureImpl<>(result);
-    ListGet get = new ListGet(from, to, args.isWithDelete(), args.isDropIfEmpty());
-    ArcusClient client = arcusClientSupplier.get();
-
-    CollectionGetOperation.Callback cb = new CollectionGetOperation.Callback() {
-      @Override
-      public void receivedStatus(OperationStatus status) {
-        switch (status.getStatusCode()) {
-          case SUCCESS:
-          case ERR_NOT_FOUND_ELEMENT:
-            break;
-          case ERR_NOT_FOUND:
-            result.set(null);
-            break;
-          case CANCELLED:
-            future.internalCancel();
-            break;
-          default:
-            /*
-             * TYPE_MISMATCH / UNREADABLE / NOT_SUPPORTED or unknown statement.
-             */
-            result.addError(key, status);
-        }
-      }
-
-      @Override
-      public void complete() {
-        future.complete();
-      }
-
-      @Override
-      public void gotData(String subKey, int flags, byte[] data, byte[] eFlag) {
-        CachedData cachedData = new CachedData(flags, data, tcForCollection.getMaxSize());
-        result.get().add(tcForCollection.decode(cachedData));
-      }
-    };
-    Operation op = client.getOpFact().collectionGet(key, get, cb);
-    future.setOp(op);
-    client.addOp(key, op);
-
-    return future;
-  }
-
-  public ArcusFuture<Boolean> lopDelete(String key, int index, boolean dropIfEmpty) {
-    ListDelete delete = new ListDelete(index, dropIfEmpty, false);
-    return collectionDelete(key, delete);
-  }
-
-  public ArcusFuture<Boolean> lopDelete(String key, int from, int to, boolean dropIfEmpty) {
-    ListDelete delete = new ListDelete(from, to, dropIfEmpty, false);
-    return collectionDelete(key, delete);
-  }
-
-  public ArcusFuture<Boolean> sopCreate(String key, ElementValueType type,
-                                        CollectionAttributes attributes) {
-    if (attributes == null) {
-      throw new IllegalArgumentException("CollectionAttributes cannot be null");
-    }
-
-    SetCreate create = new SetCreate(
-            TranscoderUtils.examineFlags(type), attributes.getExpireTime(),
-            attributes.getMaxCount(), attributes.getReadable(), false);
-    return collectionCreate(key, create);
-  }
-
-  public ArcusFuture<Boolean> sopInsert(String key, T value) {
-    return sopInsert(key, value, null);
-  }
-
-  public ArcusFuture<Boolean> sopInsert(String key, T value, CollectionAttributes attributes) {
-    SetInsert<T> insert = new SetInsert<>(value, null, attributes);
-    return collectionInsert(key, "", insert);
-  }
-
-  public ArcusFuture<Boolean> sopExist(String key, T value) {
-    AbstractArcusResult<Boolean> result = new AbstractArcusResult<>(new AtomicReference<>());
-    ArcusFutureImpl<Boolean> future = new ArcusFutureImpl<>(result);
-    SetExist<T> exist = new SetExist<>(value, tcForCollection);
-    ArcusClient client = arcusClientSupplier.get();
-
-    OperationCallback cb = new OperationCallback() {
-      @Override
-      public void receivedStatus(OperationStatus status) {
-        switch (status.getStatusCode()) {
-          case EXIST:
-            result.set(true);
-            break;
-          case NOT_EXIST:
-            result.set(false);
-            break;
-          case ERR_NOT_FOUND:
-            result.set(null);
-            break;
-          case CANCELLED:
-            future.internalCancel();
-            break;
-          default:
-            /*
-             * TYPE_MISMATCH / UNREADABLE / NOT_SUPPORTED or unknown statement.
-             */
-            result.addError(key, status);
-            break;
-        }
-      }
-
-      @Override
-      public void complete() {
-        future.complete();
-      }
-    };
-    Operation op = client.getOpFact().collectionExist(key, "", exist, cb);
-    future.setOp(op);
-    client.addOp(key, op);
-
-    return future;
-  }
-
-  public ArcusFuture<Set<T>> sopGet(String key, int count, GetArgs args) {
-    AbstractArcusResult<Set<T>> result
-            = new AbstractArcusResult<>(new AtomicReference<>(new HashSet<>()));
-    ArcusFutureImpl<Set<T>> future = new ArcusFutureImpl<>(result);
-    SetGet get = new SetGet(count, args.isWithDelete(), args.isDropIfEmpty());
-    ArcusClient client = arcusClientSupplier.get();
-
-    CollectionGetOperation.Callback cb = new CollectionGetOperation.Callback() {
-      @Override
-      public void gotData(String subKey, int flags, byte[] data, byte[] eFlag) {
-        CachedData cachedData = new CachedData(flags, data, tcForCollection.getMaxSize());
-        result.get().add(tcForCollection.decode(cachedData));
-      }
-
-      @Override
-      public void receivedStatus(OperationStatus status) {
-        switch (status.getStatusCode()) {
-          case SUCCESS:
-          case ERR_NOT_FOUND_ELEMENT:
-            break;
-          case ERR_NOT_FOUND:
-            result.set(null);
-            break;
-          case CANCELLED:
-            future.internalCancel();
-            break;
-          default:
-            /*
-             * TYPE_MISMATCH / UNREADABLE / NOT_SUPPORTED or unknown statement.
-             */
-            result.addError(key, status);
-        }
-      }
-
-      @Override
-      public void complete() {
-        future.complete();
-      }
-    };
-    Operation op = client.getOpFact().collectionGet(key, get, cb);
-    future.setOp(op);
-    client.addOp(key, op);
-
-    return future;
-  }
-
-  public ArcusFuture<Boolean> sopDelete(String key, T value, boolean dropIfEmpty) {
-    SetDelete<T> delete = new SetDelete<>(value, dropIfEmpty, false, tcForCollection);
-    return collectionDelete(key, delete);
-  }
-
-  public ArcusFuture<Boolean> mopCreate(String key, ElementValueType type,
-                                        CollectionAttributes attributes) {
-    MapCreate create = new MapCreate(TranscoderUtils.examineFlags(type),
-            attributes.getExpireTime(), attributes.getMaxCount(),
-            attributes.getReadable(), false);
-    return collectionCreate(key, create);
-  }
-
-  public ArcusFuture<Boolean> mopInsert(String key, String mKey, T value) {
-    return mopInsert(key, mKey, value, null);
-  }
-
-  public ArcusFuture<Boolean> mopInsert(String key, String mKey, T value,
-                                        CollectionAttributes attributes) {
-    MapInsert<T> insert = new MapInsert<>(value, null, attributes);
-    return collectionInsert(key, mKey, insert);
-  }
-
-  public ArcusFuture<Boolean> mopUpsert(String key, String mKey, T value) {
-    return mopUpsert(key, mKey, value, null);
-  }
-
-  public ArcusFuture<Boolean> mopUpsert(String key, String mKey, T value,
-                                        CollectionAttributes attributes) {
-    MapUpsert<T> upsert = new MapUpsert<>(value, attributes);
-    return collectionInsert(key, mKey, upsert);
-  }
-
-  public ArcusFuture<Boolean> mopUpdate(String key, String mKey, T value) {
-    MapUpdate<T> update = new MapUpdate<>(value, false);
-    return collectionUpdate(key, mKey, update);
-  }
-
-  public ArcusFuture<Map<String, T>> mopGet(String key, GetArgs args) {
-    return mopGet(key, new ArrayList<>(), args);
-  }
-
-  public ArcusFuture<T> mopGet(String key, String mKey, GetArgs args) {
-    AbstractArcusResult<T> result = new AbstractArcusResult<>(new AtomicReference<>());
-    ArcusFutureImpl<T> future = new ArcusFutureImpl<>(result);
-    List<String> mKeys = Collections.singletonList(mKey);
-    MapGet get = new MapGet(mKeys, args.isWithDelete(), args.isDropIfEmpty());
-    ArcusClient client = arcusClientSupplier.get();
-
-    CollectionGetOperation.Callback cb = new CollectionGetOperation.Callback() {
-      @Override
-      public void gotData(String mKey, int flags, byte[] data, byte[] eFlag) {
-        CachedData cachedData = new CachedData(flags, data, tcForCollection.getMaxSize());
-        result.set(tcForCollection.decode(cachedData));
-      }
-
-      @Override
-      public void receivedStatus(OperationStatus status) {
-        switch (status.getStatusCode()) {
-          case SUCCESS:
-            break;
-          case ERR_NOT_FOUND_ELEMENT:
-          case ERR_NOT_FOUND:
-            result.set(null);
-            break;
-          case CANCELLED:
-            future.internalCancel();
-            break;
-          default:
-            /*
-             * TYPE_MISMATCH / UNREADABLE / NOT_SUPPORTED or unknown statement.
-             */
-            result.addError(key, status);
-        }
-      }
-
-      @Override
-      public void complete() {
-        future.complete();
-      }
-    };
-    Operation op = client.getOpFact().collectionGet(key, get, cb);
-    future.setOp(op);
-    client.addOp(key, op);
-
-    return future;
-  }
-
-  public ArcusFuture<Map<String, T>> mopGet(String key, List<String> mKeys, GetArgs args) {
-    AbstractArcusResult<Map<String, T>> result =
-            new AbstractArcusResult<>(new AtomicReference<>(new HashMap<>()));
-    ArcusFutureImpl<Map<String, T>> future = new ArcusFutureImpl<>(result);
-    MapGet get = new MapGet(mKeys, args.isWithDelete(), args.isDropIfEmpty());
-    ArcusClient client = arcusClientSupplier.get();
-
-    CollectionGetOperation.Callback cb = new CollectionGetOperation.Callback() {
-      @Override
-      public void gotData(String mKey, int flags, byte[] data, byte[] eFlag) {
-        CachedData cachedData = new CachedData(flags, data, tcForCollection.getMaxSize());
-        result.get().put(mKey, tcForCollection.decode(cachedData));
-      }
-
-      @Override
-      public void receivedStatus(OperationStatus status) {
-        switch (status.getStatusCode()) {
-          case SUCCESS:
-          case ERR_NOT_FOUND_ELEMENT:
-            break;
-          case ERR_NOT_FOUND:
-            result.set(null);
-            break;
-          case CANCELLED:
-            future.internalCancel();
-            break;
-          default:
-            /*
-             * TYPE_MISMATCH / UNREADABLE / NOT_SUPPORTED or unknown statement.
-             */
-            result.addError(key, status);
-        }
-      }
-
-      @Override
-      public void complete() {
-        future.complete();
-      }
-    };
-    Operation op = client.getOpFact().collectionGet(key, get, cb);
-    future.setOp(op);
-    client.addOp(key, op);
-
-    return future;
-  }
-
-  public ArcusFuture<Boolean> mopDelete(String key, boolean dropIfEmpty) {
-    return mopDelete(key, new ArrayList<>(), dropIfEmpty);
-  }
-
-  public ArcusFuture<Boolean> mopDelete(String key, String mKey, boolean dropIfEmpty) {
-    return mopDelete(key, Collections.singletonList(mKey), dropIfEmpty);
-  }
-
-  public ArcusFuture<Boolean> mopDelete(String key, List<String> mKeys, boolean dropIfEmpty) {
-    MapDelete delete = new MapDelete(mKeys, dropIfEmpty, false);
-    return collectionDelete(key, delete);
-  }
-
+  @Override
   public ArcusFuture<Boolean> flush() {
     return flush(-1);
   }
 
+  @Override
   public ArcusFuture<Boolean> flush(int delay) {
     if (delay < -1) {
       throw new IllegalArgumentException("Delay should be greater than or equal to -1");
@@ -2156,10 +2213,12 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return new ArcusMultiFuture<>(futures, () -> true);
   }
 
+  @Override
   public ArcusFuture<Boolean> flush(String prefix) {
     return flush(prefix, -1);
   }
 
+  @Override
   public ArcusFuture<Boolean> flush(String prefix, int delay) {
     if (prefix == null) {
       throw new IllegalArgumentException("Prefix should not be null");
@@ -2220,10 +2279,12 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     });
   }
 
+  @Override
   public ArcusFuture<Map<SocketAddress, Map<String, String>>> stats() {
     return stats(StatsArg.GENERAL);
   }
 
+  @Override
   public ArcusFuture<Map<SocketAddress, Map<String, String>>> stats(StatsArg arg) {
     ArcusClient client = arcusClientSupplier.get();
     Collection<MemcachedNode> nodes = client.getAllNodes();
@@ -2285,6 +2346,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     });
   }
 
+  @Override
   public ArcusFuture<Map<SocketAddress, String>> versions() {
     ArcusClient client = arcusClientSupplier.get();
     Collection<MemcachedNode> nodes = client.getAllNodes();
