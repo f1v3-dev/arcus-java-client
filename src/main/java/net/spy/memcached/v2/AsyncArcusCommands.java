@@ -177,7 +177,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
       }
     };
     Operation op = client.getOpFact()
-            .store(type, key, co.getFlags(), exp, co.getData(), cb);
+        .store(type, key, co.getFlags(), exp, co.getData(), cb);
     future.setOp(op);
     client.addOp(key, op);
 
@@ -306,7 +306,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
       }
     };
     Operation op = client.getOpFact()
-            .cas(StoreType.set, key, casId, co.getFlags(), exp, co.getData(), cb);
+        .cas(StoreType.set, key, casId, co.getFlags(), exp, co.getData(), cb);
     future.setOp(op);
     client.addOp(key, op);
 
@@ -385,7 +385,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
   public ArcusFuture<T> get(String key) {
     AbstractArcusResult<CachedData> result = new AbstractArcusResult<>(new AtomicReference<>());
     ArcusFutureImpl<T> future = new ArcusFutureImpl<>(result,
-            r -> r == null ? null : tc.decode((CachedData) r));
+        r -> r == null ? null : tc.decode((CachedData) r));
     ArcusClient client = arcusClientSupplier.get();
 
     GetOperation.Callback cb = new GetOperation.Callback() {
@@ -426,10 +426,10 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
   @Override
   public ArcusFuture<CASValue<T>> gets(String key) {
     AbstractArcusResult<GetsResultImpl<T>> result
-            = new AbstractArcusResult<>(new AtomicReference<>());
+        = new AbstractArcusResult<>(new AtomicReference<>());
     @SuppressWarnings("unchecked")
     ArcusFutureImpl<CASValue<T>> future = new ArcusFutureImpl<>(
-            result, r -> r == null ? null : ((GetsResultImpl<T>) r).getDecodedValue());
+        result, r -> r == null ? null : ((GetsResultImpl<T>) r).getDecodedValue());
     ArcusClient client = arcusClientSupplier.get();
 
     GetsOperation.Callback cb = new GetsOperation.Callback() {
@@ -474,7 +474,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
 
     ArcusClient client = arcusClientSupplier.get();
     Collection<Map.Entry<MemcachedNode, List<String>>> arrangedKeys
-            = client.groupingKeys(keys, MemcachedClient.GET_BULK_CHUNK_SIZE, APIType.GET);
+        = client.groupingKeys(keys, MemcachedClient.GET_BULK_CHUNK_SIZE, APIType.GET);
 
     Collection<CompletableFuture<?>> futures = new ArrayList<>();
     Map<CompletableFuture<Map<String, T>>, List<String>> futureToKeys = new HashMap<>();
@@ -483,7 +483,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
       MemcachedNode node = entry.getKey();
       List<String> keyList = entry.getValue();
       CompletableFuture<Map<String, T>> future = getPerNode(client, node, keyList)
-              .toCompletableFuture();
+          .toCompletableFuture();
       futureToKeys.put(future, keyList);
       futures.add(future);
     }
@@ -508,17 +508,17 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
   private ArcusFuture<Map<String, T>> getPerNode(ArcusClient client, MemcachedNode node,
                                                  List<String> keyList) {
     AbstractArcusResult<Map<String, CachedData>> result
-            = new AbstractArcusResult<>((new AtomicReference<>(new HashMap<>())));
+        = new AbstractArcusResult<>((new AtomicReference<>(new HashMap<>())));
     @SuppressWarnings("unchecked")
     ArcusFutureImpl<Map<String, T>> future = new ArcusFutureImpl<>(result,
-            r -> {
-              Map<String, T> decodedMap = new HashMap<>();
-              for (Map.Entry<String, CachedData> entry
-                      : ((Map<String, CachedData>) r).entrySet()) {
-                decodedMap.put(entry.getKey(), tc.decode(entry.getValue()));
-              }
-              return decodedMap;
-            });
+        r -> {
+          Map<String, T> decodedMap = new HashMap<>();
+          for (Map.Entry<String, CachedData> entry
+              : ((Map<String, CachedData>) r).entrySet()) {
+            decodedMap.put(entry.getKey(), tc.decode(entry.getValue()));
+          }
+          return decodedMap;
+        });
 
     GetOperation.Callback cb = new GetOperation.Callback() {
       @Override
@@ -565,7 +565,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
 
     ArcusClient client = arcusClientSupplier.get();
     Collection<Map.Entry<MemcachedNode, List<String>>> arrangedKeys
-            = client.groupingKeys(keys, MemcachedClient.GET_BULK_CHUNK_SIZE, APIType.GETS);
+        = client.groupingKeys(keys, MemcachedClient.GET_BULK_CHUNK_SIZE, APIType.GETS);
 
     Collection<CompletableFuture<?>> futures = new ArrayList<>();
     Map<CompletableFuture<Map<String, CASValue<T>>>, List<String>> futureToKeys = new HashMap<>();
@@ -574,7 +574,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
       MemcachedNode node = entry.getKey();
       List<String> keyList = entry.getValue();
       CompletableFuture<Map<String, CASValue<T>>> future
-              = getsPerNode(client, node, keyList).toCompletableFuture();
+          = getsPerNode(client, node, keyList).toCompletableFuture();
       futureToKeys.put(future, keyList);
       futures.add(future);
     }
@@ -598,13 +598,13 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
   private ArcusFuture<Map<String, CASValue<T>>> getsPerNode(ArcusClient client, MemcachedNode node,
                                                             List<String> keyList) {
     AbstractArcusResult<Map<String, GetsResultImpl<T>>> result
-            = new AbstractArcusResult<>(new AtomicReference<>(new HashMap<>()));
+        = new AbstractArcusResult<>(new AtomicReference<>(new HashMap<>()));
 
     @SuppressWarnings("unchecked")
     ArcusFutureImpl<Map<String, CASValue<T>>> future = new ArcusFutureImpl<>(result, r -> {
       Map<String, CASValue<T>> decodedMap = new HashMap<>();
       ((Map<String, GetsResultImpl<T>>) r).forEach((key, getsResult) ->
-              decodedMap.put(key, getsResult.getDecodedValue()));
+          decodedMap.put(key, getsResult.getDecodedValue()));
       return decodedMap;
     });
 
@@ -717,8 +717,8 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     }
 
     ListCreate create = new ListCreate(TranscoderUtils.examineFlags(type),
-            attributes.getExpireTime(), attributes.getMaxCount(),
-            attributes.getOverflowAction(), attributes.getReadable(), false);
+        attributes.getExpireTime(), attributes.getMaxCount(),
+        attributes.getOverflowAction(), attributes.getReadable(), false);
     return collectionCreate(key, create);
   }
 
@@ -783,7 +783,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
   @Override
   public ArcusFuture<List<T>> lopGet(String key, int from, int to, GetArgs args) {
     AbstractArcusResult<List<T>> result =
-            new AbstractArcusResult<>(new AtomicReference<>(new ArrayList<>()));
+        new AbstractArcusResult<>(new AtomicReference<>(new ArrayList<>()));
     ArcusFutureImpl<List<T>> future = new ArcusFutureImpl<>(result);
     ListGet get = new ListGet(from, to, args.isWithDelete(), args.isDropIfEmpty());
     ArcusClient client = arcusClientSupplier.get();
@@ -847,8 +847,8 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     }
 
     SetCreate create = new SetCreate(
-            TranscoderUtils.examineFlags(type), attributes.getExpireTime(),
-            attributes.getMaxCount(), attributes.getReadable(), false);
+        TranscoderUtils.examineFlags(type), attributes.getExpireTime(),
+        attributes.getMaxCount(), attributes.getReadable(), false);
     return collectionCreate(key, create);
   }
 
@@ -866,7 +866,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
   @Override
   public ArcusFuture<Set<T>> sopGet(String key, int count, GetArgs args) {
     AbstractArcusResult<Set<T>> result
-            = new AbstractArcusResult<>(new AtomicReference<>(new HashSet<>()));
+        = new AbstractArcusResult<>(new AtomicReference<>(new HashSet<>()));
     ArcusFutureImpl<Set<T>> future = new ArcusFutureImpl<>(result);
     SetGet get = new SetGet(count, args.isWithDelete(), args.isDropIfEmpty());
     ArcusClient client = arcusClientSupplier.get();
@@ -968,8 +968,8 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     }
 
     MapCreate create = new MapCreate(TranscoderUtils.examineFlags(type),
-            attributes.getExpireTime(), attributes.getMaxCount(),
-            attributes.getReadable(), false);
+        attributes.getExpireTime(), attributes.getMaxCount(),
+        attributes.getReadable(), false);
     return collectionCreate(key, create);
   }
 
@@ -1074,7 +1074,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     }
 
     AbstractArcusResult<Map<String, T>> result =
-            new AbstractArcusResult<>(new AtomicReference<>(new HashMap<>()));
+        new AbstractArcusResult<>(new AtomicReference<>(new HashMap<>()));
     ArcusFutureImpl<Map<String, T>> future = new ArcusFutureImpl<>(result);
     MapGet get = new MapGet(mKeys, args.isWithDelete(), args.isDropIfEmpty());
     ArcusClient client = arcusClientSupplier.get();
@@ -1150,8 +1150,8 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     }
 
     CollectionCreate create = new BTreeCreate(TranscoderUtils.examineFlags(type),
-            attributes.getExpireTime(), attributes.getMaxCount(),
-            attributes.getOverflowAction(), attributes.getReadable(), false);
+        attributes.getExpireTime(), attributes.getMaxCount(),
+        attributes.getOverflowAction(), attributes.getReadable(), false);
 
     return collectionCreate(key, create);
   }
@@ -1165,19 +1165,19 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
   public ArcusFuture<Boolean> bopInsert(String key, BTreeElement<T> element,
                                         CollectionAttributes attributes) {
     BTreeInsert<T> insert = new BTreeInsert<>(element.getValue(), element.getEFlag(),
-            null, attributes);
+        null, attributes);
     return collectionInsert(key, element.getBKey().toString(), insert);
   }
 
   @Override
   public ArcusFuture<Map.Entry<Boolean, BTreeElement<T>>> bopInsertAndGetTrimmed(
-          String key, BTreeElement<T> element) {
+      String key, BTreeElement<T> element) {
     return bopInsertOrUpsertAndGetTrimmed(key, element, false, null);
   }
 
   @Override
   public ArcusFuture<Map.Entry<Boolean, BTreeElement<T>>> bopInsertAndGetTrimmed(
-          String key, BTreeElement<T> element, CollectionAttributes attributes) {
+      String key, BTreeElement<T> element, CollectionAttributes attributes) {
     return bopInsertOrUpsertAndGetTrimmed(key, element, false, attributes);
   }
 
@@ -1190,26 +1190,26 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
   public ArcusFuture<Boolean> bopUpsert(String key, BTreeElement<T> element,
                                         CollectionAttributes attributes) {
     BTreeUpsert<T> upsert = new BTreeUpsert<>(element.getValue(), element.getEFlag(),
-            null, attributes);
+        null, attributes);
     return collectionInsert(key, element.getBKey().toString(), upsert);
   }
 
   @Override
   public ArcusFuture<Map.Entry<Boolean, BTreeElement<T>>> bopUpsertAndGetTrimmed(
-          String key, BTreeElement<T> element) {
+      String key, BTreeElement<T> element) {
     return bopInsertOrUpsertAndGetTrimmed(key, element, true, null);
   }
 
   @Override
   public ArcusFuture<Map.Entry<Boolean, BTreeElement<T>>> bopUpsertAndGetTrimmed(
-          String key, BTreeElement<T> element, CollectionAttributes attributes) {
+      String key, BTreeElement<T> element, CollectionAttributes attributes) {
     return bopInsertOrUpsertAndGetTrimmed(key, element, true, attributes);
   }
 
   private ArcusFutureImpl<Map.Entry<Boolean, BTreeElement<T>>> bopInsertOrUpsertAndGetTrimmed(
-          String key, BTreeElement<T> element, boolean isUpsert, CollectionAttributes attributes) {
+      String key, BTreeElement<T> element, boolean isUpsert, CollectionAttributes attributes) {
     AbstractArcusResult<Map.Entry<Boolean, BTreeElement<T>>> result =
-            new AbstractArcusResult<>(new AtomicReference<>());
+        new AbstractArcusResult<>(new AtomicReference<>());
     ArcusFutureImpl<Map.Entry<Boolean, BTreeElement<T>>> future = new ArcusFutureImpl<>(result);
     BTreeInsertAndGet<T> insertAndGet = createBTreeInsertAndGet(element, isUpsert, attributes);
     CachedData co = tcForCollection.encode(insertAndGet.getValue());
@@ -1253,11 +1253,11 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
       public void gotData(int flags, BKeyObject bKeyObject, byte[] eFlag, byte[] data) {
         CachedData cachedData = new CachedData(flags, data, tcForCollection.getMaxSize());
         trimmedElement = new BTreeElement<>(
-                BKey.of(bKeyObject), tcForCollection.decode(cachedData), eFlag);
+            BKey.of(bKeyObject), tcForCollection.decode(cachedData), eFlag);
       }
     };
     Operation op = client.getOpFact()
-            .bopInsertAndGet(key, insertAndGet, co.getData(), cb);
+        .bopInsertAndGet(key, insertAndGet, co.getData(), cb);
     future.setOp(op);
     client.addOp(key, op);
 
@@ -1269,11 +1269,11 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
                                                                   CollectionAttributes attributes) {
     if (element.getBKey().getType() == BKey.BKeyType.LONG) {
       return new BTreeInsertAndGet<>((long) element.getBKey().getData(),
-              element.getEFlag(), element.getValue(), isUpsert, attributes);
+          element.getEFlag(), element.getValue(), isUpsert, attributes);
     }
 
     return new BTreeInsertAndGet<>((byte[]) element.getBKey().getData(),
-            element.getEFlag(), element.getValue(), isUpsert, attributes);
+        element.getEFlag(), element.getValue(), isUpsert, attributes);
   }
 
   @Override
@@ -1309,7 +1309,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
   @Override
   public ArcusFuture<BTreeElement<T>> bopGet(String key, BKey bKey, BopGetArgs args) {
     AbstractArcusResult<BTreeElement<T>> result =
-            new AbstractArcusResult<>(new AtomicReference<>());
+        new AbstractArcusResult<>(new AtomicReference<>());
     ArcusFutureImpl<BTreeElement<T>> future = new ArcusFutureImpl<>(result);
     BTreeGet get = createBTreeGet(bKey, args);
     ArcusClient client = arcusClientSupplier.get();
@@ -1400,7 +1400,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
       public void gotData(String bKey, int flags, byte[] data, byte[] eFlag) {
         CachedData cachedData = new CachedData(flags, data, tcForCollection.getMaxSize());
         result.get().addElement(new BTreeElement<>(
-                BKey.of(bKey), tcForCollection.decode(cachedData), eFlag));
+            BKey.of(bKey), tcForCollection.decode(cachedData), eFlag));
       }
     };
     Operation op = client.getOpFact().collectionGet(key, get, cb);
@@ -1413,24 +1413,24 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
   private static BTreeGet createBTreeGet(BKey bKey, BopGetArgs args) {
     if (bKey.getType() == BKey.BKeyType.LONG) {
       return new BTreeGet((long) bKey.getData(), args.getElementFlagFilter(),
-              args.isWithDelete(), args.isDropIfEmpty());
+          args.isWithDelete(), args.isDropIfEmpty());
     }
 
     return new BTreeGet((byte[]) bKey.getData(), args.getElementFlagFilter(),
-            args.isWithDelete(), args.isDropIfEmpty());
+        args.isWithDelete(), args.isDropIfEmpty());
   }
 
   private static BTreeGet createBTreeGet(BKey from, BKey to, BopGetArgs args) {
 
     if (from.getType() == BKey.BKeyType.LONG) {
       return new BTreeGet((long) from.getData(), (long) to.getData(),
-              args.getElementFlagFilter(), args.getOffset(), args.getCount(),
-              args.isWithDelete(), args.isDropIfEmpty());
+          args.getElementFlagFilter(), args.getOffset(), args.getCount(),
+          args.isWithDelete(), args.isDropIfEmpty());
     }
 
     return new BTreeGet((byte[]) from.getData(), (byte[]) to.getData(),
-            args.getElementFlagFilter(), args.getOffset(), args.getCount(),
-            args.isWithDelete(), args.isDropIfEmpty());
+        args.getElementFlagFilter(), args.getOffset(), args.getCount(),
+        args.isWithDelete(), args.isDropIfEmpty());
   }
 
   @Override
@@ -1444,17 +1444,17 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
 
     ArcusClient client = arcusClientSupplier.get();
     Collection<Map.Entry<MemcachedNode, List<String>>> arrangedKeys =
-            client.groupingKeys(keys, ArcusClient.BOPGET_BULK_CHUNK_SIZE, APIType.BOP_GET);
+        client.groupingKeys(keys, ArcusClient.BOPGET_BULK_CHUNK_SIZE, APIType.BOP_GET);
 
     Collection<CompletableFuture<?>> futures = new ArrayList<>();
     Map<CompletableFuture<Map<String, BTreeElements<T>>>, List<String>> futureToKeys =
-            new HashMap<>();
+        new HashMap<>();
 
     for (Map.Entry<MemcachedNode, List<String>> entry : arrangedKeys) {
       BTreeGetBulk<T> getBulk =
-              createBTreeGetBulk(entry.getKey(), entry.getValue(), from, to, args);
+          createBTreeGetBulk(entry.getKey(), entry.getValue(), from, to, args);
       CompletableFuture<Map<String, BTreeElements<T>>> future =
-              bopMultiGetPerNode(client, getBulk).toCompletableFuture();
+          bopMultiGetPerNode(client, getBulk).toCompletableFuture();
       futureToKeys.put(future, entry.getValue());
       futures.add(future);
     }
@@ -1467,7 +1467,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     return new ArcusMultiFuture<>(futures, () -> {
       Map<String, BTreeElements<T>> results = new HashMap<>();
       for (Map.Entry<CompletableFuture<Map<String, BTreeElements<T>>>, List<String>> entry
-              : futureToKeys.entrySet()) {
+          : futureToKeys.entrySet()) {
         if (entry.getKey().isCompletedExceptionally()) {
           for (String key : entry.getValue()) {
             results.put(key, null);
@@ -1486,7 +1486,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
   private ArcusFuture<Map<String, BTreeElements<T>>> bopMultiGetPerNode(ArcusClient client,
                                                                         BTreeGetBulk<T> getBulk) {
     AbstractArcusResult<Map<String, BTreeElements<T>>> result =
-            new AbstractArcusResult<>(new AtomicReference<>(new HashMap<>()));
+        new AbstractArcusResult<>(new AtomicReference<>(new HashMap<>()));
     ArcusFutureImpl<Map<String, BTreeElements<T>>> future = new ArcusFutureImpl<>(result);
 
     BTreeGetBulkOperation.Callback cb = new BTreeGetBulkOperation.Callback() {
@@ -1544,7 +1544,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
         CachedData cachedData = new CachedData(flags, data, tcForCollection.getMaxSize());
         BTreeElements<T> elements = result.get().get(key);
         elements.addElement(new BTreeElement<>(
-                BKey.of(bKey), tcForCollection.decode(cachedData), eFlag));
+            BKey.of(bKey), tcForCollection.decode(cachedData), eFlag));
       }
     };
     Operation op = client.getOpFact().bopGetBulk(getBulk, cb);
@@ -1558,13 +1558,13 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
                                              BKey from, BKey to, BopGetArgs args) {
     if (from.getType() == BKey.BKeyType.LONG) {
       return new BTreeGetBulkWithLongTypeBkey<>(node, keys,
-              (long) from.getData(), (long) to.getData(), args.getElementFlagFilter(),
-              args.getOffset(), args.getCount());
+          (long) from.getData(), (long) to.getData(), args.getElementFlagFilter(),
+          args.getOffset(), args.getCount());
     }
 
     return new BTreeGetBulkWithByteTypeBkey<>(node, keys,
-            (byte[]) from.getData(), (byte[]) to.getData(), args.getElementFlagFilter(),
-            args.getOffset(), args.getCount());
+        (byte[]) from.getData(), (byte[]) to.getData(), args.getElementFlagFilter(),
+        args.getOffset(), args.getCount());
   }
 
   @Override
@@ -1577,14 +1577,14 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
 
     ArcusClient client = arcusClientSupplier.get();
     Collection<Map.Entry<MemcachedNode, List<String>>> arrangedKeys =
-            client.groupingKeys(keys, ArcusClient.SMGET_CHUNK_SIZE, APIType.BOP_SMGET);
+        client.groupingKeys(keys, ArcusClient.SMGET_CHUNK_SIZE, APIType.BOP_SMGET);
 
     List<CompletableFuture<SMGetElements<T>>> smGetFutures = new ArrayList<>();
 
     for (Map.Entry<MemcachedNode, List<String>> entry : arrangedKeys) {
       BTreeSMGet<T> smGet = createBTreeSMGet(from, to, args, unique, entry);
       CompletableFuture<SMGetElements<T>> future =
-              bopSortMergeGetPerNode(client, smGet).toCompletableFuture();
+          bopSortMergeGetPerNode(client, smGet).toCompletableFuture();
       smGetFutures.add(future);
     }
 
@@ -1593,7 +1593,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
      */
     @SuppressWarnings("unchecked")
     Collection<CompletableFuture<?>> futures =
-            (Collection<CompletableFuture<?>>) (Collection<?>) smGetFutures;
+        (Collection<CompletableFuture<?>>) (Collection<?>) smGetFutures;
     return new ArcusMultiFuture<>(futures, () -> {
       List<SMGetElements<T>> results = new ArrayList<>();
       for (CompletableFuture<SMGetElements<T>> future : smGetFutures) {
@@ -1602,7 +1602,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
         }
       }
       return SMGetElements.mergeSMGetElements(results, from.compareTo(to) <= 0, unique,
-              args.getCount());
+          args.getCount());
     });
   }
 
@@ -1615,7 +1615,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
 
     AtomicReference<SMGetElements<T>> atomicReference = new AtomicReference<>(smGetElements);
     AbstractArcusResult<SMGetElements<T>> result =
-            new AbstractArcusResult<>(atomicReference);
+        new AbstractArcusResult<>(atomicReference);
 
     ArcusFutureImpl<SMGetElements<T>> future = new ArcusFutureImpl<>(result);
 
@@ -1650,7 +1650,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
       public void gotData(String key, int flags, Object bKey, byte[] eFlag, byte[] data) {
         CachedData cachedData = new CachedData(flags, data, tcForCollection.getMaxSize());
         BTreeElement<T> btreeElement = new BTreeElement<>(
-                BKey.of(bKey), tcForCollection.decode(cachedData), eFlag);
+            BKey.of(bKey), tcForCollection.decode(cachedData), eFlag);
         elementList.add(new SMGetElements.Element<>(key, btreeElement));
       }
 
@@ -1677,13 +1677,13 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
 
     if (from.getType() == BKey.BKeyType.LONG) {
       return new BTreeSMGetWithLongTypeBkey<>(entry.getKey(), entry.getValue(),
-              (long) from.getData(), (long) to.getData(), args.getElementFlagFilter(),
-              args.getCount(), unique);
+          (long) from.getData(), (long) to.getData(), args.getElementFlagFilter(),
+          args.getCount(), unique);
     }
 
     return new BTreeSMGetWithByteTypeBkey<>(entry.getKey(), entry.getValue(),
-            (byte[]) from.getData(), (byte[]) to.getData(), args.getElementFlagFilter(),
-            args.getCount(), unique);
+        (byte[]) from.getData(), (byte[]) to.getData(), args.getElementFlagFilter(),
+        args.getCount(), unique);
   }
 
   @Override
@@ -1734,7 +1734,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
   @Override
   public ArcusFuture<BTreeElement<T>> bopGetByPosition(String key, int pos, BTreeOrder order) {
     AbstractArcusResult<BTreeElement<T>> result
-            = new AbstractArcusResult<>(new AtomicReference<>());
+        = new AbstractArcusResult<>(new AtomicReference<>());
     ArcusFutureImpl<BTreeElement<T>> future = new ArcusFutureImpl<>(result);
     BTreeGetByPosition getByPosition = new BTreeGetByPosition(order, pos);
     ArcusClient client = arcusClientSupplier.get();
@@ -1787,7 +1787,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     }
 
     AbstractArcusResult<List<BTreeElement<T>>> result
-            = new AbstractArcusResult<>(new AtomicReference<>(new ArrayList<>()));
+        = new AbstractArcusResult<>(new AtomicReference<>(new ArrayList<>()));
     ArcusFutureImpl<List<BTreeElement<T>>> future = new ArcusFutureImpl<>(result);
     BTreeGetByPosition getByPosition = new BTreeGetByPosition(order, from, to);
     ArcusClient client = arcusClientSupplier.get();
@@ -1797,7 +1797,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
       public void gotData(int pos, int flags, BKeyObject bKey, byte[] eFlag, byte[] data) {
         CachedData cachedData = new CachedData(flags, data, tcForCollection.getMaxSize());
         result.get().add(new BTreeElement<>(
-                BKey.of(bKey), tcForCollection.decode(cachedData), eFlag));
+            BKey.of(bKey), tcForCollection.decode(cachedData), eFlag));
       }
 
       @Override
@@ -1838,20 +1838,20 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
                                                                        int count,
                                                                        BTreeOrder order) {
     AbstractArcusResult<List<BTreePositionElement<T>>> result =
-            new AbstractArcusResult<>(new AtomicReference<>(new ArrayList<>()));
+        new AbstractArcusResult<>(new AtomicReference<>(new ArrayList<>()));
     ArcusFutureImpl<List<BTreePositionElement<T>>> future = new ArcusFutureImpl<>(result);
     BTreeFindPositionWithGet findPositionWithGet =
-            new BTreeFindPositionWithGet(bKey.toBKeyObject(), order, count);
+        new BTreeFindPositionWithGet(bKey.toBKeyObject(), order, count);
     ArcusClient client = arcusClientSupplier.get();
 
     BTreeFindPositionWithGetOperation.Callback cb = new BTreeFindPositionWithGetOperation
-            .Callback() {
+        .Callback() {
 
       @Override
       public void gotData(int pos, int flags, BKeyObject bKey, byte[] eFlag, byte[] data) {
         CachedData cachedData = new CachedData(flags, data, tcForCollection.getMaxSize());
         result.get().add(new BTreePositionElement<>(
-                BKey.of(bKey), tcForCollection.decode(cachedData), eFlag, pos));
+            BKey.of(bKey), tcForCollection.decode(cachedData), eFlag, pos));
       }
 
       @Override
@@ -1932,7 +1932,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
   @Override
   public ArcusFuture<Boolean> bopDelete(String key, BKey bKey, BopDeleteArgs args) {
     BTreeDelete delete = new BTreeDelete(bKey.toString(),
-            args.getEFlagFilter(), args.isDropIfEmpty(), false);
+        args.getEFlagFilter(), args.isDropIfEmpty(), false);
     return collectionDelete(key, delete);
   }
 
@@ -1940,7 +1940,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
   public ArcusFuture<Boolean> bopDelete(String key, BKey from, BKey to, BopDeleteArgs args) {
     verifyBKeyTypesMatch(from, to);
     BTreeDelete delete = new BTreeDelete(from.toString(), to.toString(),
-            args.getCount(), args.getEFlagFilter(), args.isDropIfEmpty(), false);
+        args.getCount(), args.getEFlagFilter(), args.isDropIfEmpty(), false);
     return collectionDelete(key, delete);
   }
 
@@ -1990,7 +1990,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
       }
     };
     CollectionCreateOperation op = client.getOpFact()
-            .collectionCreate(key, collectionCreate, cb);
+        .collectionCreate(key, collectionCreate, cb);
     future.setOp(op);
     client.addOp(key, op);
 
@@ -2037,7 +2037,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
       }
     };
     CollectionInsertOperation op = client.getOpFact()
-            .collectionInsert(key, internalKey, collectionInsert, co.getData(), cb);
+        .collectionInsert(key, internalKey, collectionInsert, co.getData(), cb);
     future.setOp(op);
     client.addOp(key, op);
 
@@ -2087,8 +2087,8 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
       }
     };
     Operation op = client.getOpFact()
-            .collectionUpdate(key, internalKey, collectionUpdate,
-                    (co == null) ? null : co.getData(), cb);
+        .collectionUpdate(key, internalKey, collectionUpdate,
+            (co == null) ? null : co.getData(), cb);
     future.setOp(op);
     client.addOp(key, op);
 
@@ -2275,7 +2275,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
       };
 
       Operation op = client.getOpFact()
-              .flush(prefix.isEmpty() ? "<null>" : prefix, delay, false, cb);
+          .flush(prefix.isEmpty() ? "<null>" : prefix, delay, false, cb);
       future.setOp(op);
       client.addOp(node, op);
       futures.add(future);
@@ -2306,7 +2306,7 @@ public class AsyncArcusCommands<T> implements AsyncArcusCommandsIF<T> {
     for (MemcachedNode node : nodes) {
       SocketAddress address = node.getSocketAddress();
       AbstractArcusResult<Map<String, String>> result
-              = new AbstractArcusResult<>(new AtomicReference<>(new HashMap<>()));
+          = new AbstractArcusResult<>(new AtomicReference<>(new HashMap<>()));
       ArcusFutureImpl<Map<String, String>> future = new ArcusFutureImpl<>(result);
 
       StatsOperation.Callback cb = new StatsOperation.Callback() {

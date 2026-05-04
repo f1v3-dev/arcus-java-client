@@ -556,7 +556,7 @@ public interface AsyncArcusCommandsIF<T> {
    * @return {@code Map.Entry} with insertion result and trimmed element
    */
   ArcusFuture<Map.Entry<Boolean, BTreeElement<T>>> bopInsertAndGetTrimmed(
-          String key, BTreeElement<T> element);
+      String key, BTreeElement<T> element);
 
   /**
    * Insert an element into a btree item and get trimmed element if overflow trim occurs.
@@ -567,7 +567,7 @@ public interface AsyncArcusCommandsIF<T> {
    * @return {@code Map.Entry} with insertion result and trimmed element
    */
   ArcusFuture<Map.Entry<Boolean, BTreeElement<T>>> bopInsertAndGetTrimmed(
-          String key, BTreeElement<T> element, CollectionAttributes attributes);
+      String key, BTreeElement<T> element, CollectionAttributes attributes);
 
   /**
    * Upsert an element into a btree item.
@@ -597,7 +597,7 @@ public interface AsyncArcusCommandsIF<T> {
    * @return {@code Map.Entry} with upsertion result and trimmed element
    */
   ArcusFuture<Map.Entry<Boolean, BTreeElement<T>>> bopUpsertAndGetTrimmed(
-          String key, BTreeElement<T> element);
+      String key, BTreeElement<T> element);
 
   /**
    * Upsert an element into a btree item and get trimmed element if overflow trim occurs.
@@ -608,7 +608,7 @@ public interface AsyncArcusCommandsIF<T> {
    * @return {@code Map.Entry} with upsertion result and trimmed element
    */
   ArcusFuture<Map.Entry<Boolean, BTreeElement<T>>> bopUpsertAndGetTrimmed(
-          String key, BTreeElement<T> element, CollectionAttributes attributes);
+      String key, BTreeElement<T> element, CollectionAttributes attributes);
 
   /**
    * Update an element in a btree item
@@ -708,7 +708,7 @@ public interface AsyncArcusCommandsIF<T> {
    * no {@code Map.Entry} in the map if the key is not found
    */
   ArcusFuture<Map<String, BTreeElements<T>>> bopMultiGet(
-          List<String> keys, BKey from, BKey to, BopGetArgs args);
+      List<String> keys, BKey from, BKey to, BopGetArgs args);
 
   /**
    * Get sort-merged elements from multiple btree items.
@@ -722,7 +722,7 @@ public interface AsyncArcusCommandsIF<T> {
    * empty {@code SMGetElements} if no matching elements exist
    */
   ArcusFuture<SMGetElements<T>> bopSortMergeGet(
-          List<String> keys, BKey from, BKey to, boolean unique, BopGetArgs args);
+      List<String> keys, BKey from, BKey to, boolean unique, BopGetArgs args);
 
   /**
    * Get the position of an element with the given bKey in a btree item.
@@ -745,7 +745,7 @@ public interface AsyncArcusCommandsIF<T> {
    * {@code null} if the key or element is not found
    */
   ArcusFuture<BTreeElement<T>> bopGetByPosition(
-          String key, int pos, BTreeOrder order);
+      String key, int pos, BTreeOrder order);
 
   /**
    * Get elements in a position range from a btree item.
@@ -759,7 +759,7 @@ public interface AsyncArcusCommandsIF<T> {
    * {@code null} if the key is not found
    */
   ArcusFuture<List<BTreeElement<T>>> bopGetByPosition(
-          String key, int from, int to, BTreeOrder order);
+      String key, int from, int to, BTreeOrder order);
 
   /**
    * Get an element by bKey and its neighboring elements with position information.
@@ -774,7 +774,7 @@ public interface AsyncArcusCommandsIF<T> {
    * {@code null} if the key is not found
    */
   ArcusFuture<List<BTreePositionElement<T>>> bopPositionWithGet(
-          String key, BKey bKey, int count, BTreeOrder order);
+      String key, BKey bKey, int count, BTreeOrder order);
 
   /**
    * Count elements in a bKey range from a btree item.
