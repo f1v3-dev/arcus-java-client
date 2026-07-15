@@ -25,7 +25,7 @@ public abstract class CollectionCreate {
 
   protected CollectionCreate(CollectionType type, int flags,
                              CreateAttributes attributes, boolean noreply) {
-    checkOverflowAction(type, attributes.getOverflowAction());
+    type.checkOverflowAction(attributes.getOverflowAction());
     this.flags = flags;
     this.attributes = attributes;
     this.noreply = noreply;
@@ -56,30 +56,6 @@ public abstract class CollectionCreate {
 
     str = b.toString();
     return str;
-  }
-
-  public static String makeCreateClause(CreateAttributes attributes, int flags) {
-    if (attributes == null) {
-      return null;
-    }
-    StringBuilder b = new StringBuilder();
-    b.append("create ").append(flags)
-        .append(" ").append(attributes.getExpireTime())
-        .append(" ").append(attributes.getMaxCount());
-    if (attributes.getOverflowAction() != null) {
-      b.append(" ").append(attributes.getOverflowAction());
-    }
-    if (!attributes.getReadable()) {
-      b.append(" ").append("unreadable");
-    }
-    return b.toString();
-  }
-
-  public static void checkOverflowAction(CollectionType type, CollectionOverflowAction action) {
-    if (action != null && !type.isAvailableOverflowAction(action)) {
-      throw new IllegalArgumentException(
-          action + " is unavailable overflow action in " + type + ".");
-    }
   }
 
   public String toString() {

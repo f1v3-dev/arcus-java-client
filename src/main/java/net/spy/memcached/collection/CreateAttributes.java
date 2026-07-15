@@ -41,12 +41,23 @@ public final class CreateAttributes {
   private final long maxCount;
   private final CollectionOverflowAction overflowAction;
   private final boolean readable;
+  private final String clause;
 
   private CreateAttributes(Builder builder) {
     this.expireTime = builder.expireTime;
     this.maxCount = builder.maxCount;
     this.overflowAction = builder.overflowAction;
     this.readable = builder.readable;
+
+    StringBuilder sb = new StringBuilder();
+    sb.append(expireTime).append(' ').append(maxCount);
+    if (overflowAction != null) {
+      sb.append(' ').append(overflowAction);
+    }
+    if (!readable) {
+      sb.append(' ').append("unreadable");
+    }
+    this.clause = sb.toString();
   }
 
   public static Builder builder() {
@@ -70,6 +81,23 @@ public final class CreateAttributes {
         .overflowAction(attr.getOverflowAction())
         .readable(attr.getReadable() == null || attr.getReadable())
         .build();
+  }
+
+  /**
+   * Serializes the create-command attribute clause into a string.
+   * @return {@code <exp> <maxcount> [overflow action] [unreadable]} (no flags / create / noreply)
+   */
+  public String stringify() {
+    return clause;
+  }
+
+  /**
+   * Builds the {@code create} clause embedded in an insert-with-create command.
+   * @param flags the item flags
+   * @return {@code create <flags> } followed by {@link #stringify()}
+   */
+  public String toCreateClause(int flags) {
+    return "create " + flags + " " + clause;
   }
 
   public long getExpireTime() {
